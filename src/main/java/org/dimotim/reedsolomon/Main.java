@@ -12,12 +12,15 @@ public class Main {
     public static void main(String[] args) {
         if(true){
             while (true) {
-                check(97, 63);
-                System.out.println("\n\n");
+                long st = System.currentTimeMillis();
+                for (int i = 0; i < 10; i++) {
+                    check(97, 63);
+                }
+                System.out.println("--time-- " + (System.currentTimeMillis() - st));
             }
         } else {
-            int[] dec = new ReedSolomon(new Field(11), 5).decode(new int[]{9, 7, 1, 0, 1, 0, 3, 4, 7, 4, 8});
-            System.out.println(Arrays.toString(dec));
+            int[] dec = new ReedSolomon(new Field(97), 63).decode(new int[]{75, 28, 79, 59, 57, 61, 92, 66, 16, 1, 17, 40, 10, 76, 29, 14, 96, 84, 46, 0, 29, 27, 73, 83, 22, 48, 46, 29, 22, 53, 7, 53, 34, 68, 17, 7, 11, 34, 10, 66, 43, 4, 48, 9, 71, 56, 8, 34, 46, 79, 48, 20, 73, 85, 40, 46, 50, 65, 33, 76, 87, 20, 51, 18, 81, 87, 57, 94, 61, 29, 92, 8, 17, 83, 24, 71, 46, 47, 39, 62, 58, 81, 1, 24, 37, 17, 42, 31, 76, 83, 69, 47, 52, 43, 93, 76, 84});
+            System.out.println(Arrays.equals(dec, new int[]{75, 60, 30, 69, 7, 25, 1, 24, 31, 22, 89, 36, 26, 90, 0, 84, 56, 73, 83, 32, 27, 23, 19, 63, 92, 29, 43, 53, 42, 81, 72, 18, 79, 68, 6, 67, 65, 59, 4, 19, 46, 89, 3, 74, 3, 27, 12, 71, 60, 4, 91, 19, 59, 11, 67, 60, 42, 52, 53, 91, 73, 31, 58}));
         }
     }
 
@@ -25,14 +28,14 @@ public class Main {
         final ReedSolomon reedSolomon = new ReedSolomon(new Field(q), k);
         final int e = (q - k)/2;
 
-        System.out.println("field size, code word length, q=" + q);
-        System.out.println("message length, k=" + k);
-        System.out.println("max errors, e=" + e);
+        //System.out.println("field size, code word length, q=" + q);
+        //System.out.println("message length, k=" + k);
+        //System.out.println("max errors, e=" + e);
 
         Random random = new Random();
 
         int[] src = IntStream.range(0, k).map(i -> random.nextInt(q)).toArray();
-        System.out.println("src word: " + Arrays.toString(src));
+        //System.out.println("src word: " + Arrays.toString(src));
 
         int[] encoded = reedSolomon.encode(src);
 
@@ -42,16 +45,18 @@ public class Main {
                 .map(i -> random.nextInt(q))
                 .forEach(w -> sent[w] = random.nextInt(q));
 
-        System.out.println("encoded: " + Arrays.toString(encoded));
-        System.out.println("sent:    " + Arrays.toString(sent));
+        //System.out.println("encoded: " + Arrays.toString(encoded));
+        //System.out.println("sent:    " + Arrays.toString(sent));
 
         int[] decoded = reedSolomon.decode(sent);
-        System.out.println("decoded: "+Arrays.toString(decoded));
+        //System.out.println("decoded: "+Arrays.toString(decoded));
 
         boolean success = Arrays.equals(src, decoded);
         System.out.println("success: "+ success);
 
         if(!success) {
+            System.err.println("src: "+ Arrays.toString(src));
+            System.err.println("sent: "+ Arrays.toString(sent));
             throw new RuntimeException("not success");
         }
     }
@@ -285,12 +290,22 @@ record Poly(Field f) {
 /**
  * поле Fq, q должно быть простым
  */
-record Field (int q) {
+record Field (int q, int[] invs) {
     Field(int q) {
-        this.q = q;
+        this(q, getInvs(q));
         if(IntStream.range(2, q - 1).anyMatch(d -> q % d == 0)) {
             throw new IllegalArgumentException("q is not prime: " + q);
         }
+    }
+
+    private static int[] getInvs(int q) {
+        return IntStream.concat(
+                IntStream.of(0),
+                IntStream.range(1, q)
+                        .map(n -> IntStream.range(1, q)
+                                .filter(i -> 1 == (i * n) % q)
+                                .findFirst().getAsInt())
+        ).toArray();
     }
 
     void assertVal(int v) {
@@ -328,8 +343,7 @@ record Field (int q) {
     int div(int a, int b) {
         assertVal(a);
         assertValAndNotNull(b);
-        if (a == 0) return 0;
-        return IntStream.range(1, q).filter(i -> a == (i * b) % q).findFirst().getAsInt();
+        return mul(a, invs[b]);
     }
 
     int pow(int a, int n) {
@@ -337,7 +351,22 @@ record Field (int q) {
         if (n < 0) {
             throw new IllegalArgumentException("n < 0, n = " + n);
         }
+
+        if (a == 0) {
+            return n != 0 ? 0 : 1;
+        }
+
+        return powH(a, n % (q - 1));  // a^phi(q) `mod` q = 1
+    }
+
+    private int powH(int a, int n) {
         if (n == 0) return 1;
-        return mul(a, pow(a, n - 1));
+        int r = powH(a, n / 2);
+        int r2 =  mul(r, r);
+        if (n % 2 == 0) {
+            return r2;
+        } else {
+            return mul(a, r2);
+        }
     }
 }
