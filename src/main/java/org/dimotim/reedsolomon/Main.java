@@ -1,16 +1,18 @@
 package org.dimotim.reedsolomon;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.OptionalInt;
 import java.util.Random;
 import java.util.function.IntBinaryOperator;
 import java.util.function.IntPredicate;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class Main {
     public static void main(String[] args) {
-        if(true){
+        if(false){
             while (true) {
                 long st = System.currentTimeMillis();
                 for (int i = 0; i < 10; i++) {
@@ -19,8 +21,8 @@ public class Main {
                 System.out.println("--time-- " + (System.currentTimeMillis() - st));
             }
         } else {
-            int[] dec = new ReedSolomon(new Field(97), 63).decode(new int[]{75, 28, 79, 59, 57, 61, 92, 66, 16, 1, 17, 40, 10, 76, 29, 14, 96, 84, 46, 0, 29, 27, 73, 83, 22, 48, 46, 29, 22, 53, 7, 53, 34, 68, 17, 7, 11, 34, 10, 66, 43, 4, 48, 9, 71, 56, 8, 34, 46, 79, 48, 20, 73, 85, 40, 46, 50, 65, 33, 76, 87, 20, 51, 18, 81, 87, 57, 94, 61, 29, 92, 8, 17, 83, 24, 71, 46, 47, 39, 62, 58, 81, 1, 24, 37, 17, 42, 31, 76, 83, 69, 47, 52, 43, 93, 76, 84});
-            System.out.println(Arrays.equals(dec, new int[]{75, 60, 30, 69, 7, 25, 1, 24, 31, 22, 89, 36, 26, 90, 0, 84, 56, 73, 83, 32, 27, 23, 19, 63, 92, 29, 43, 53, 42, 81, 72, 18, 79, 68, 6, 67, 65, 59, 4, 19, 46, 89, 3, 74, 3, 27, 12, 71, 60, 4, 91, 19, 59, 11, 67, 60, 42, 52, 53, 91, 73, 31, 58}));
+            int[] dec = new ReedSolomon(new Field(11), 5).decode(new int[]{0,1,2,3,4,5,6,7,8,9,10});
+            System.out.println(Arrays.toString(dec));
         }
     }
 
@@ -63,19 +65,28 @@ public class Main {
 }
 
 /**
- * @param f q = n - поле Fq, размер кодового слова; должно быть простым
- * @param k - количество информационных символов в кодовом слове
+ * f q = n - поле Fq, размер кодового слова; должно быть простым
+ * k - количество информационных символов в кодовом слове
  * k = 2 * e, где e - максимальное количество ошибок в кодовом слове
  * k < n
  */
-record ReedSolomon(Field f, int k, Poly poly) {
+class ReedSolomon {
+    private final Field f;
+    private final int k;
+    private final Poly poly;
+    private final UnaryOperator<int[]> interpolator;
+
     ReedSolomon(Field f, int k) {
-        this(f, k, new Poly(f));
-        if (k >= f.q()) throw new IllegalArgumentException("k > q, k="+k + " q="+ f.q());
+        this.f = f;
+        this.k = k;
+        this.poly = new Poly(f);
+        this.interpolator = poly.getInterpolator(IntStream.range(0, f.q).toArray());
+
+        if (k >= f.q) throw new IllegalArgumentException("k > q, k="+k + " q="+ f.q);
     }
 
     int q() {
-        return f.q();
+        return f.q;
     }
 
     int[] encode(int[] src) {
@@ -89,16 +100,16 @@ record ReedSolomon(Field f, int k, Poly poly) {
 
     int[] decode(int[] src) {
         if (src.length != q()) throw new IllegalArgumentException("src length != q");
-        int[] pp = poly.interpolate(IntStream.range(0, q()).toArray(), src);
+        int[] pp = interpolator.apply(src);
 
         int[] b = IntStream.range(0, q())
-                .map(z -> f.mul(f.pow(z, (q() - k())/2), poly.at(z, pp)))
+                .map(z -> f.mul(f.pow(z, (q() - k)/2), poly.at(z, pp)))
                 .toArray();
 
         int[][] m = IntStream.range(0, q())
                 .mapToObj(z -> IntStream.concat(
-                        IntStream.rangeClosed(0, (q() + k())/2 - 1).map(j -> f.pow(z, j)),
-                        IntStream.rangeClosed(0, (q() - k())/2 -1).map(j -> f.minus(0, f.mul(f.pow(z, j),poly.at(z, pp))))
+                        IntStream.rangeClosed(0, (q() + k)/2 - 1).map(j -> f.pow(z, j)),
+                        IntStream.rangeClosed(0, (q() - k)/2 -1).map(j -> f.minus(0, f.mul(f.pow(z, j),poly.at(z, pp))))
                 ).toArray())
                 .toArray(int[][]::new);
 
@@ -112,6 +123,7 @@ record ReedSolomon(Field f, int k, Poly poly) {
     }
 
     int[] solve(int[][] m, int[] b) {
+        printMatr(m);
         if (m[0].length == 1) {
             if (m[0][0] == 0) {
                 if (b[0] != 0) throw new IllegalArgumentException("unsolvable system");
@@ -148,7 +160,7 @@ record ReedSolomon(Field f, int k, Poly poly) {
                         IntStream.of(b[0]),
                         IntStream.range(0, ss.length).map(i -> f.minus(0, f.mul(m[0][1 + i], ss[i])))
                     )
-                    .reduce(f::plus).getAsInt(), m[0][0]);
+                    .reduce(f::plus).orElseThrow(), m[0][0]);
 
             return IntStream.concat(IntStream.of(x0), Arrays.stream(ss)).toArray();
         }
@@ -163,7 +175,7 @@ record ReedSolomon(Field f, int k, Poly poly) {
 
 
     int[][] swapM(int i, int j, int[][] m) {
-        m = m.clone();
+        //m = m.clone();
         int[] mi = m[i];
         int[] mj = m[j];
         m[i] = mj;
@@ -172,7 +184,7 @@ record ReedSolomon(Field f, int k, Poly poly) {
     }
 
     int[] swapB(int i, int j, int[] b) {
-        b = b.clone();
+        //b = b.clone();
         int bi = b[i];
         int bj = b[j];
         b[i] = bj;
@@ -183,15 +195,21 @@ record ReedSolomon(Field f, int k, Poly poly) {
 
 /**
  *
- * @param f поле
+ * f поле
  */
-record Poly(Field f) {
+class Poly {
     /**
      *
      * @param x точка
      * @param as коэффициенты начиная с младшей степени
      * @return значение в точке x
      */
+    private final Field f;
+
+    Poly(Field f) {
+        this.f = f;
+    }
+
     int at(int x, int[] as) {
         int v = 0;
         for (int i = 0; i < as.length; i++) {
@@ -200,7 +218,7 @@ record Poly(Field f) {
         return v;
     }
 
-    int[] interpolate(int[] xs, int[] ys) {
+    UnaryOperator<int[]> getInterpolator(int[] xs) {
         /*
                       (x  - x2)(x  - x3)...(x  - xn)
              f(x) =   ------------------------------ * y1 + ...
@@ -208,7 +226,7 @@ record Poly(Field f) {
 
          */
         int n = xs.length;
-        return IntStream.range(0, n)
+        List<int[]> basis = IntStream.range(0, n)
                 .mapToObj(i -> {
                     int xi = xs[i];
                     int zn = IntStream.range(0, n)
@@ -217,20 +235,24 @@ record Poly(Field f) {
                                 int xj = xs[j];
                                 return  f.minus(xi, xj);
                             })
-                            .reduce(f::mul).getAsInt();
+                            .reduce(f::mul).orElseThrow();
 
                     int[] ch = IntStream.range(0, n)
                             .filter(j -> j != i)
                             .mapToObj(j -> {
                                 int xj = xs[j];
                                 return new int[]{f.minus(0, xj), 1};
-                            }).reduce(this::mul).get();
+                            }).reduce(this::mul).orElseThrow();
 
+                    return mulC(ch, f.div(1, zn));
+                }).toList();
 
-                    int c = f.div(ys[i], zn);
+        List<int[]> reArr = IntStream.range(0, xs.length)
+                .mapToObj(i -> IntStream.range(0, xs.length).map(j -> basis.get(j)[i]).toArray()).toList();
 
-                    return mulC(ch, c);
-                }).reduce(this::plus).get();
+        return ys -> reArr.stream()
+                .mapToInt(vec -> IntStream.range(0, xs.length).map(i -> f.mul(vec[i], ys[i])).reduce(f::plus).orElseThrow())
+                .toArray();
     }
 
     int[] divide(int[] as, int[] bs) {
@@ -290,9 +312,13 @@ record Poly(Field f) {
 /**
  * поле Fq, q должно быть простым
  */
-record Field (int q, int[] invs) {
+class Field {
+    final int q;
+    private final int[] invs;
+
     Field(int q) {
-        this(q, getInvs(q));
+        this.q = q;
+        this.invs = getInvs(q);
         if(IntStream.range(2, q - 1).anyMatch(d -> q % d == 0)) {
             throw new IllegalArgumentException("q is not prime: " + q);
         }
@@ -304,7 +330,7 @@ record Field (int q, int[] invs) {
                 IntStream.range(1, q)
                         .map(n -> IntStream.range(1, q)
                                 .filter(i -> 1 == (i * n) % q)
-                                .findFirst().getAsInt())
+                                .findFirst().orElseThrow())
         ).toArray();
     }
 
