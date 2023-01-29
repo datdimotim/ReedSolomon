@@ -1,14 +1,12 @@
 package org.dimotim.reedsolomon;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.OptionalInt;
-import java.util.Random;
+import java.util.*;
 import java.util.function.IntBinaryOperator;
 import java.util.function.IntPredicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public class Main {
     public static void main(String[] args) {
@@ -394,5 +392,90 @@ class Field {
         } else {
             return mul(a, r2);
         }
+    }
+}
+
+class BerlikampMesssi {
+    private final Field f;
+
+    BerlikampMesssi(Field f) {
+        this.f = f;
+    }
+
+    /**
+     *                  L
+     * Находит ф-лу 0 = sum {  A[n-i] * c[i]  } наименьшей длины L, при c[0] = 1
+     *                  i = 0
+     * @param as - A[i]
+     * @return c[i]
+     */
+    int[] solve(int[] as) {
+        int k = (int) Arrays.stream(as).takeWhile(a -> a == 0).count();
+
+        if (k + 1 >= as.length) {
+            // последовательность имеет большой предпериод из нулей
+            // 0,0,0,0,0,0,0,s - дальнейшее продолжение однозначно не определить
+            throw new RuntimeException();
+        }
+
+
+        Id<int[]> gs = new Id<>(new int[]{1}); // ф-ла на предыдущем шаге
+        Id<Integer> r = new Id<>(as[k]); // ошибка на k элементе
+        Id<Integer> gl = new Id<>(k); // первый элемент, где не работает
+
+        Id<int[]> fs = new Id<>(new int[k + 2]); // ф-ла на текущем шаге, в начальный момент: 0 = as[1] + as[0] * fs[1]; fs[0] = 1
+        fs.t[0] = 1;
+        fs.t[1] = f.div(f.minus(0, as[k]), as[k+1]);
+
+        IntStream.range(k + 2, as.length).forEach(i -> {
+            int d = IntStream.range(0, fs.t.length)
+                    .map(j -> f.mul(as[i - j], fs.t[j]))
+                    .reduce(f::plus).orElseThrow();
+
+            if (d == 0) return;;
+
+            int[] fsNew = IntStream.range(0, Math.max(fs.t.length, i + 3 - fs.t.length))
+                    .map(j -> {
+                        int cf = j < fs.t.length ? fs.t[j] : 0;
+                        int gShift = i - gl.t;
+                        int cg = j - gShift < 0 || j - gShift >= gs.t.length ? 0 : gs.t[j - gShift];
+
+                        return f.minus(cf, f.mul(cg, f.div(d, r.t)));
+                    }).toArray();
+
+
+            System.out.println(Arrays.toString(fs.t));
+            System.out.println(Arrays.toString(gs.t));
+            System.out.println(Arrays.toString(fsNew));
+            System.out.println();
+
+            if (fs.t.length != fsNew.length) {
+                gs.t = fs.t;
+                gl.t = i;
+                r.t = d;
+                fs.t = fsNew;
+            } else {
+                fs.t = fsNew;
+            }
+        });
+
+        return fs.t;
+    }
+
+    public static void main(String[] args) {
+        final Field q = new Field(997);
+        BerlikampMesssi bm = new BerlikampMesssi(q);
+
+
+        System.out.println(Arrays.toString(bm.solve(new int[]{0,1,1,1,4,10,25,64,163})));
+    }
+
+}
+
+class Id<T> {
+    T t;
+
+    Id(T t) {
+        this.t = t;
     }
 }
